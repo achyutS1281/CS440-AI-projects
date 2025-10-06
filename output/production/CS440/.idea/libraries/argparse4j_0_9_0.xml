@@ -1,0 +1,15 @@
+<component name="libraryTable">
+  <library name="argparse4j-0.9.0">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/lib/argparse4j-0.9.0.jar!/" />
+      <root url="jar://$PROJECT_DIR$/lib/hamcrest-2.2.jar!/" />
+      <root url="jar://$PROJECT_DIR$/lib/junit-4.12.jar!/" />
+      <root url="jar://$PROJECT_DIR$/lib/labs-stealth.jar!/" />
+      <root url="jar://$PROJECT_DIR$/lib/rttt-0.0.3.jar!/" />
+      <root url="jar://$PROJECT_DIR$/lib/scripted.jar!/" />
+      <root url="jar://$PROJECT_DIR$/lib/Sepia.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
