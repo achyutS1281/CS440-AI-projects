@@ -41,8 +41,6 @@ class PriorityMoveSorter implements java.util.Comparator<Node> {
         if (isCenter(coordB) && !isCenter(coordA)) return 1;
         if (isCorner(coordA) && !isCorner(coordB)) return -1;
         if (isCorner(coordB) && !isCorner(coordA)) return 1;
-        if (isEdge(coordA) && !isEdge(coordB)) return -1;
-        if (isEdge(coordB) && !isEdge(coordA)) return 1;
 
         return 0;
     }
@@ -101,13 +99,12 @@ class PriorityMoveSorter implements java.util.Comparator<Node> {
         return false;
     }
 }
-public class MoveOrderer
-    extends Object {
+public class MoveOrderer {
 
     public static List<Node> orderChildren(List<Node> children, PlayerType agent) {
         // this default ordering does no ordering at all and just returns the children in whatever order they
         // were generated in
-        Collections.sort(children, new PriorityMoveSorter(agent));
+        children.sort(new PriorityMoveSorter(agent));
         return children;
 
     }

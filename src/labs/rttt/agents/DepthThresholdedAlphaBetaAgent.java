@@ -24,7 +24,7 @@ public class DepthThresholdedAlphaBetaAgent
     extends Agent
 {
 
-    public static final int DEFAULT_MAX_DEPTH = 3;
+    public static final int DEFAULT_MAX_DEPTH = 5;
 
     private int maxDepth;
 
