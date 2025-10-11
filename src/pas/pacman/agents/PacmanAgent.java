@@ -23,7 +23,8 @@ public class PacmanAgent
 {
 
     private final Random random;
-
+    private Map<String, Float> edgeCache;
+    private int ghostId = -1;
     public PacmanAgent(int myUnitId,
                        int pacmanId,
                        int ghostChaseRadius)
@@ -37,40 +38,39 @@ public class PacmanAgent
     public Set<PelletVertex> getOutoingNeighbors(final PelletVertex vertex,
                                                  final GameView game)
     {
-        // Run BFS
-        Coordinate start = vertex.getPacmanCoordinate();
-        //System.out.println(start);
         Set<PelletVertex> neighbors = new HashSet<>();
-        //Run BFS until we find all reachable pellets
-        Queue<Coordinate> queue = new LinkedList<>();
-        Set<Coordinate> visited = new HashSet<>();
-        queue.add(start);
-        visited.add(start);
 
-        while(!queue.isEmpty()){
-            Coordinate current = queue.poll();
-            //System.out.println(getOutgoingNeighbors(current, game));
-            for(Coordinate neighbor : getOutgoingNeighbors(current, game)){
-                GameView gameView = game;
-                if(!visited.contains(neighbor)){
-                    if (vertex.getRemainingPelletCoordinates().contains(neighbor)) {
-                        PelletVertex neighborVertex = vertex.removePellet(neighbor);
-                        neighbors.add(neighborVertex);
-                        continue;
-                    }
-                    visited.add(neighbor);
-                    queue.add(neighbor);
-                }
-            }
+        for(Coordinate coord : vertex.getRemainingPelletCoordinates()){
+            PelletVertex neighbor = vertex.removePellet(coord);
+            neighbors.add(neighbor);
         }
         return neighbors;
     }
-
+    public void cacheEdges(PelletVertex src, GameView game){
+        if(edgeCache == null){
+            edgeCache = new HashMap<>();
+        }
+        Set<Coordinate> pellets = new HashSet<>(src.getRemainingPelletCoordinates());
+        pellets.add(src.getPacmanCoordinate());
+        for(Coordinate pellet1 : pellets) {
+            PelletVertex pelletVertex = src.removePellet(pellet1);
+            for (PelletVertex pellet2 : getOutoingNeighbors(pelletVertex, game)) {
+                Coordinate pellet2Coord = pellet2.getPacmanCoordinate();
+                if (!pellet1.equals(pellet2Coord)) {
+                    if(!edgeCache.containsKey(pellet1 + " " + pellet2Coord) && !edgeCache.containsKey(pellet2Coord + " " + pellet1)){
+                        edgeCache.put(pellet1 + " " + pellet2Coord, graphSearch(pellet1, pellet2Coord, game).getTrueCost());
+                    }
+                }
+            }
+        }
+    }
     @Override
     public float getEdgeWeight(final PelletVertex src,
                                final PelletVertex dst)
     {
-        return 1f;
+        String key = src.getPacmanCoordinate() + " " + dst.getPacmanCoordinate();
+        String keyRev = dst.getPacmanCoordinate() + " " + src.getPacmanCoordinate();
+        return edgeCache.get(key) != null ? edgeCache.get(key) : edgeCache.get(keyRev);
     }
     public Coordinate findRoot(Coordinate c, Map<Coordinate, Coordinate> parentMap){
         //System.out.println("Finding root of " + c + " with parent map " + parentMap);
@@ -86,6 +86,9 @@ public class PacmanAgent
     public float getHeuristic(final PelletVertex src,
                               final GameView game)
     {
+        if(edgeCache == null){
+            cacheEdges(src, game);
+        }
         Set<Coordinate> pellets = new HashSet<>(src.getRemainingPelletCoordinates());
         //System.out.println(pellets);
         pellets.add(src.getPacmanCoordinate());
@@ -98,9 +101,7 @@ public class PacmanAgent
                 Coordinate pellet2Coord = pellet2.getPacmanCoordinate();
                 if (!pellet1.equals(pellet2Coord)) {
                     //edges.add(new Pair<>(new Pair<>(pellet1, pellet2Coord), graphSearch(pellet1, pellet2Coord, game).getTrueCost()));
-                    float manhattanDist = Math.abs(pellet1.getXCoordinate() - pellet2Coord.getXCoordinate()) +
-                                  Math.abs(pellet1.getYCoordinate() - pellet2Coord.getYCoordinate());
-                    edges.add(new Pair<>(new Pair<>(pellet1, pellet2Coord), manhattanDist));
+                    edges.add(new Pair<>(new Pair<>(pellet1, pellet2Coord), getEdgeWeight(pelletVertex, pellet2)));
                 }
             }
         }
@@ -127,10 +128,17 @@ public class PacmanAgent
     @Override
     public Path<PelletVertex> findPathToEatAllPelletsTheFastest(final GameView game)
     {
-        //Implement A* to find the fastest path to eat all pellets
         PelletVertex src = new PelletVertex(game);
-        System.out.println("Finding path to fastest of " + src.getPacmanCoordinate());
-        PriorityQueue<Path<PelletVertex>> pq = new PriorityQueue<>(Comparator.comparing(path -> path.getTrueCost() + path.getEstimatedPathCostToGoal()));
+        for (int ghost : game.getAllEntityIds()){
+            if (ghost == getPacmanId()) {
+                continue;
+            }
+            ghostId = ghost;
+            break;
+        }
+        cacheEdges(src, game);
+        //System.out.println("Finding path to fastest of " + src.getPacmanCoordinate());
+        PriorityQueue<Path<PelletVertex>> pq = new PriorityQueue<>(Comparator.comparing(path -> path.getEstimatedPathCostToGoal() + path.getTrueCost()));
         Set<String> visited = new HashSet<>();
         Map<Coordinate, Coordinate> parentMap = new HashMap<>();
         Map<String, Float> costMap = new HashMap<>();
@@ -143,8 +151,8 @@ public class PacmanAgent
             PelletVertex current = currentPath.getDestination();
             //System.out.println(current.getRemainingPelletCoordinates().size());
             if (current.getRemainingPelletCoordinates().isEmpty()) {
-                System.out.println("A* found a path to eat all pellets with cost " + currentPath.getTrueCost());
-                System.out.println(currentPath);
+                //System.out.println("A* found a path to eat all pellets with cost " + currentPath.getTrueCost());
+                //System.out.println(currentPath);
                 return currentPath;
             }
             String keyCurrent = current.getPacmanCoordinate() + " " + current.getRemainingPelletCoordinates();
@@ -165,14 +173,16 @@ public class PacmanAgent
                 }else if(tentativeCost < costMap.get(keyNeighbor)){
                     costMap.put(keyNeighbor, tentativeCost);
                     parentMap.put(neighbor.getPacmanCoordinate(), current.getPacmanCoordinate());
-                    pq.add(new Path<>(neighbor, graphSearch(current.getPacmanCoordinate(), neighbor.getPacmanCoordinate(), game).getTrueCost(), getHeuristic(neighbor, game), currentPath));
+                    Path<PelletVertex> path = new Path<>(neighbor, graphSearch(current.getPacmanCoordinate(), neighbor.getPacmanCoordinate(), game).getTrueCost(), getHeuristic(neighbor, game), currentPath);
+                    pq.remove(path);
+                    pq.add(path);
                 }else{
-                    System.out.println("Skipping neighbor " + neighbor + " with cost " + tentativeCost + " and heuristic " + getHeuristic(neighbor, game) + " and cost map " + costMap.get(keyNeighbor));
+                    //System.out.println("Skipping neighbor " + neighbor + " with cost " + tentativeCost + " and heuristic " + getHeuristic(neighbor, game) + " and cost map " + costMap.get(keyNeighbor));
                 }
             }
         }
 
-        System.out.println("No path found to eat all pellets ");
+        //System.out.println("No path found to eat all pellets ");
         return null;
 
 
@@ -190,6 +200,7 @@ public class PacmanAgent
                 if (Math.abs(dx) != Math.abs(dy)) {
                     int newX = (int) currentX + dx;
                     int newY = (int) currentY + dy;
+                    Coordinate newCoord = new Coordinate(newX, newY);
                     Action currAction = null;
                     try {
                         currAction = Action.inferFromCoordinates(src, new Coordinate(newX, newY));
@@ -210,6 +221,7 @@ public class PacmanAgent
                                         final Coordinate tgt,
                                         final GameView game)
     {
+        Coordinate currTarget = tgt;
         PriorityQueue<Path<Coordinate>> pq = new PriorityQueue<>(Comparator.comparing(Path<Coordinate>::getTrueCost));
         Set<Coordinate> visited = new HashSet<>();
         Map<Coordinate, Coordinate> parentMap = new HashMap<>();
@@ -220,20 +232,19 @@ public class PacmanAgent
         while (!pq.isEmpty()) {
             Path<Coordinate> currentPath = pq.poll();
             Coordinate current = currentPath.getDestination();
-            if (Math.abs(current.getXCoordinate() - tgt.getXCoordinate()) <= 1 && Math.abs(current.getYCoordinate() - tgt.getYCoordinate()) <= 1 && Math.abs(current.getXCoordinate() - tgt.getXCoordinate()) != Math.abs(current.getYCoordinate() - tgt.getYCoordinate())) {
-                float finalMoveCost = 1f;
-                currentPath = new Path<>(tgt, finalMoveCost, currentPath);
+            if (current.equals(currTarget)) {
+                if (!currTarget.equals(tgt)) {
+                    currentPath = new Path<Coordinate>(tgt, 1f, currentPath);
+                }
                 return currentPath;
             }
-            visited.add(current);
+            System.out.println(getOutgoingNeighbors(current, game));
             for(Coordinate neighbor : getOutgoingNeighbors(current, game)){
                 float tentativeCost = costMap.get(current) + 1f;
-                if(!visited.contains(neighbor)){
-                    if(!costMap.containsKey(neighbor) || tentativeCost < costMap.get(neighbor)){
-                        costMap.put(neighbor, tentativeCost);
-                        parentMap.put(neighbor, current);
-                        pq.add(new Path<Coordinate>(neighbor, 1f, currentPath));
-                    }
+                if(!costMap.containsKey(neighbor) || tentativeCost < costMap.get(neighbor)){
+                    costMap.put(neighbor, tentativeCost);
+                    parentMap.put(neighbor, current);
+                    pq.add(new Path<Coordinate>(neighbor, 1f, currentPath));
                 }
             }
         }
@@ -241,60 +252,53 @@ public class PacmanAgent
     }
 
     @Override
-    public void makePlan(final GameView game)
-    {
-        Path<PelletVertex> path = findPathToEatAllPelletsTheFastest(game);
+    public void makePlan(final GameView game) {
         Stack<Coordinate> stack = new Stack<>();
-        Path<PelletVertex> currentPath = path;
-        int i = 0;
-        while(currentPath != null){
-            PelletVertex currentVertex = currentPath.getDestination();
-            Coordinate currentCoord = currentVertex.getPacmanCoordinate();
-            Path<Coordinate> movePath = null;
-            if(i == 0) {
-                stack.push(currentCoord);
-                i++;
-            }
-            if(currentPath.getParentPath() != null && currentPath.getParentPath().getDestination() != null){
-                PelletVertex parentVertex = currentPath.getParentPath().getDestination();
-                Coordinate parentCoord = parentVertex.getPacmanCoordinate();
-                System.out.println("Finding move path from " + currentCoord + " to " + parentCoord);
-                movePath = graphSearch(parentCoord, currentCoord, game);
-                movePath = movePath.getParentPath();
-            }
-            while(movePath != null){
-                System.out.println(movePath);
-                Coordinate moveCoord = movePath.getDestination();
-                stack.push(moveCoord);
-                System.out.println(stack);
-                movePath = movePath.getParentPath();
-            }
+        Coordinate pacmanCoord = game.getEntity(getPacmanId()).getCurrentCoordinate();
+        System.out.println(pacmanCoord+ " " + this.getTargetCoordinate());
+        Path<Coordinate> path = graphSearch(pacmanCoord, this.getTargetCoordinate(), game);
+        if (path == null) {
+            System.out.println("Failed");
+        }
+        System.out.println("Path: " + path);
+        Path<Coordinate> currentPath = path;
+        while (currentPath != null && currentPath.getParentPath() != null) {
+            Coordinate currentCoord = currentPath.getDestination();
+            stack.push(currentCoord);
             currentPath = currentPath.getParentPath();
         }
-        System.out.println(stack);
         this.setPlanToGetToTarget(stack);
+
 
     }
 
     @Override
     public Action makeMove(final GameView game)
     {
-        if(getPlanToGetToTarget() == null){
-            makePlan(game);
-            //System.out.println("Made plan: " + getPlanToGetToTarget().size() + " " + getPlanToGetToTarget());
-        }
-        if(getPlanToGetToTarget().isEmpty()){
-            for(Coordinate pellet : new PelletVertex(game).getRemainingPelletCoordinates()){
-                System.out.println("Remaining pellet at: " + pellet);
+         cacheEdges(new PelletVertex(game), game);
+
+         Action action = null;
+         if(this.getTargetCoordinate() != null && getPlanToGetToTarget() == null){
+             makePlan(game);
+         }
+         if(this.getTargetCoordinate() != null && getPlanToGetToTarget() != null){
+            if(getPlanToGetToTarget().peek().equals(game.getEntity(getPacmanId()).getCurrentCoordinate())){
+                getPlanToGetToTarget().pop();
+            }
+            if(getPlanToGetToTarget().isEmpty()){
+                setPlanToGetToTarget(null);
+            }
+            else{
+
+                try {
+                    action = Action.inferFromCoordinates(game.getEntity(game.getPacmanId()).getCurrentCoordinate(), getPlanToGetToTarget().peek());
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+
             }
         }
-        Coordinate nextCoord = this.getPlanToGetToTarget().pop();
-        Action action = null;
-        try {
-            action = Action.inferFromCoordinates(game.getEntity(game.getPacmanId()).getCurrentCoordinate(), nextCoord);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+
         return action;
     }
 
